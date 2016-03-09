@@ -18,3 +18,4 @@ void Network::broadcastDatagram()
     qDebug() << "Broadcasted";
     emit finished();
 }
+

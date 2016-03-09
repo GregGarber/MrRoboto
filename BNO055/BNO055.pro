@@ -4,6 +4,7 @@ QT -= gui
 TARGET = BNO055
 CONFIG += console
 CONFIG -= app_bundle
+LIBS += -lwiringPi
 
 TEMPLATE = app
 
