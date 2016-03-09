@@ -229,6 +229,8 @@ public:
     bool isWriteAck(QByteArray response);
     bool readCommand(quint8 address, QByteArray value, QByteArray &response, bool ack);
     bool isReadAck(QByteArray response);
+    bool setMode(char mode);
+    bool setConfigMode();
 
 signals:
 

@@ -173,6 +173,14 @@ bool BNO055::isReadAck(QByteArray response){
     return false;
 }
 
+bool BNO055::setMode(char mode){
+    QByteArray m;// well this is awkward
+    m.append(mode);
+    writeCommand(BNO055_OPR_MODE_ADDR, m, true);
+}
+bool BNO055::setConfigMode(){
+    setMode(OPERATION_MODE_CONFIG);
+}
 /*
     def _write_byte(self, address, value, ack=True):
         if self._i2c_device is not None:
