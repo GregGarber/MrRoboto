@@ -1,10 +1,13 @@
 #include "bno055.h"
 
+
 BNO055::BNO055(QObject *parent) : QObject(parent)
 {
+#ifndef NOT_A_PI
     wiringPiSetup () ;
     pinMode (18, OUTPUT) ;
     digitalWrite (0, HIGH) ; delay (650) ;
+#endif
 
 
     // For now make stupid assumption that 1st available serial port is correct one
@@ -238,7 +241,9 @@ bool BNO055::isReadAck(QByteArray response){
 
 bool BNO055::setMode(char mode){
     bool r = writeCommand(BNO055_OPR_MODE_ADDR, mode, true);
+#ifndef NOT_A_PI
     delay (300) ;
+#endif
     return r;
 }
 
@@ -267,10 +272,11 @@ void BNO055::init(){
     }
 
     //reset
+#ifndef NOT_A_PI
     digitalWrite (0, LOW) ; delay (10) ;
     digitalWrite (0, HIGH) ; 
     delay (650) ;
-
+#endif
     qDebug() << "write Power mode";
     writeCommand(BNO055_PWR_MODE_ADDR, POWER_MODE_NORMAL);
     qDebug() << "write use internal oscillator";
@@ -298,7 +304,9 @@ quint16 BNO055::bytes2quint16(quint8 lsb, quint8 msb){
 
 Revision BNO055::getRevision(){
     Revision rev;
+#ifndef NOT_A_PI
     delay (3000) ;
+#endif
     rev.accel = readByte(BNO055_ACCEL_REV_ID_ADDR);
     rev.mag = readByte(BNO055_MAG_REV_ID_ADDR);
     rev.gyro = readByte(BNO055_GYRO_REV_ID_ADDR);
@@ -307,10 +315,181 @@ Revision BNO055::getRevision(){
     return rev;
 }
 
+void BNO055::setExternalCrystal(bool has_external_crystal){
+    setConfigMode();
+    if(has_external_crystal){
+        writeCommand(BNO055_SYS_TRIGGER_ADDR, 0x80);
+    }else{
+        writeCommand(BNO055_SYS_TRIGGER_ADDR, 0x00);
+    }
+    setOperationMode();
+}
+
+
+
+
+SelfTest BNO055::selfTest(){
+    quint8 sys_trigger;
+    SelfTest test_result;
+    setConfigMode();
+    sys_trigger = readByte(BNO055_SYS_TRIGGER_ADDR);
+    writeCommand(BNO055_SYS_TRIGGER_ADDR, sys_trigger | 0x1);
+#ifndef NOT_A_PI
+    delay(1000);
+#endif
+    test_result.self_test = readByte(BNO055_SELFTEST_RESULT_ADDR);
+    setOperationMode();
+    test_result.status = readByte(BNO055_SYS_STAT_ADDR);
+    test_result.error = readByte(BNO055_SYS_ERR_ADDR);
+    return test_result;
+}
+
+void BNO055::printSelfTest(SelfTest test_result){
+    qDebug() << QString("Accelerometer self test:%1").arg((test_result.self_test & 1) >0 ? "Pass":"Fail");
+    qDebug() << QString("Magnetometer self test:%1").arg((test_result.self_test & 2) >0 ? "Pass":"Fail");
+    qDebug() << QString("Gyroscope self test:%1").arg((test_result.self_test & 4) >0 ? "Pass":"Fail");
+    qDebug() << QString("MCU self test:%1").arg((test_result.self_test & 8) >0 ? "Pass":"Fail");
+
+    //- System status register value (0-6) with the following meaning:
+    QString status("Status: ");
+    switch(test_result.status){
+    case 0:
+        status += "Idle";
+        break;
+    case 1:
+        status += "System Error";
+        break;
+    case 2:
+        status += "Initializing Peripherals";
+        break;
+    case 3:
+        status += "System Initialization";
+        break;
+    case 4:
+        status += "Executing Self-Test";
+        break;
+    case 5:
+        status += "Sensor fusion algorithm running";
+        break;
+    case 6:
+        status += "System running without fusion algorithms";
+        break;
+    };
+    qDebug() << status;
+    QString errors("Errors: ");
+    //- System error register value(0-10) with the following meaning:
+    switch(test_result.error){
+    case 0:
+        errors += "No error";
+        break;
+    case 1:
+        errors += "Peripheral initialization error";
+        break;
+    case 2:
+        errors += "System initialization error";
+        break;
+    case 3:
+        errors += "Self test result failed";
+        break;
+    case 4:
+        errors += "Register map value out of range";
+        break;
+    case 5:
+        errors += "Register map address out of range";
+        break;
+    case 6:
+        errors += "Register map write error";
+        break;
+    case 7:
+        errors += "BNO low power mode not available for selected operation mode";
+        break;
+    case 8:
+        errors += "Accelerometer power mode not available";
+        break;
+    case 9:
+        errors += "Fusion algorithm configuration error";
+        break;
+    case 10:
+        errors += "Sensor configuration error";
+        break;
+    }
+    qDebug() << "Errors:" << errors;
+}
+
+void BNO055::printSelfTest(){
+    SelfTest test_results;
+    test_results = selfTest();
+    printSelfTest(test_results);
+}
+
+CalibrationStatus BNO055::getCalibrationStatus(){
+    CalibrationStatus cs;
+    quint8 cal_status;
+    cal_status = readByte(BNO055_CALIB_STAT_ADDR);
+    cs.system = ((cal_status >> 6) & 0x03) > 0;
+    cs.gyroscope =  ((cal_status >> 4) & 0x03) > 0;
+    cs.accelerometer = ((cal_status >> 2) & 0x03) > 0;
+    cs.magnetometer = (cal_status & 0x03)>0;
+    return cs;
+}
+
+QByteArray BNO055::getCalibration(){
+    QByteArray config;
+    setConfigMode();
+    config = readBytes(ACCEL_OFFSET_X_LSB_ADDR, 22);
+    setOperationMode();
+    return config;
+}
+
+void BNO055::setCalibration(QByteArray data){
+    setConfigMode();
+    writeCommand(ACCEL_OFFSET_X_LSB_ADDR, data);
+    setOperationMode();
+}
+
+// waits until calibration is available then writes it to file_path
+bool BNO055::writeCalibrationFile(QString file_path){
+    QFile file(file_path);
+    CalibrationStatus cs;
+    //wait until it is calibrated
+    qDebug() << "Waiting for calibration";
+    do{
+        cs = getCalibrationStatus();
+#ifndef NOT_A_PI
+        delay(1000);
+#endif
+    }while( !cs.system || !cs.accelerometer || !cs.gyroscope || !cs.magnetometer);
+    qDebug() << "Calibration Ready";
+    //get the calibration
+    QByteArray calibration = getCalibration();
+    //write calibration data to file_path
+    if (!file.open(QIODevice::WriteOnly)) return false;
+    file.write(calibration.data(), calibration.count());
+    file.close();
+    return true;
+}
+
+//reads calibration data from file_path and writes it to sensor
+bool BNO055::readCalibrationFile(QString file_path){
+    QFile file(file_path);
+    if (!file.open(QIODevice::ReadOnly)) return false;
+    QByteArray calibration = file.readAll();
+    setCalibration(calibration);
+    return true;
+}
+
 
 
 qint16* BNO055::readVector3(quint8 address){
     QByteArray data = readBytes(address, 6);
+    qint16 *result = new qint16[3];
+    for(int i=0; i<3; i++){
+        result[i] = ((data[i*2+1] << 8) | data[i*2]) & 0xFFFF;
+    }
+    return result;
+}
+qint16* BNO055::readVector4(quint8 address){
+    QByteArray data = readBytes(address, 8);
     qint16 *result = new qint16[3];
     for(int i=0; i<3; i++){
         result[i] = ((data[i*2+1] << 8) | data[i*2]) & 0xFFFF;
@@ -327,3 +506,65 @@ qreal* BNO055::readEuler(){
     result[2] = (qreal)data[2] / 16.0;
     return result;
 }
+
+qreal* BNO055::readMagnetometer(){
+    qint16 *data = readVector3(BNO055_MAG_DATA_X_LSB_ADDR);
+    qreal *result = new qreal[3];
+    result[0] = (qreal)data[0] / 16.0;
+    result[1] = (qreal)data[1] / 16.0;
+    result[2] = (qreal)data[2] / 16.0;
+    return result;
+}
+
+qreal* BNO055::readGyroscope(){
+    qint16 *data = readVector3(BNO055_GYRO_DATA_X_LSB_ADDR);
+    qreal *result = new qreal[3];
+    result[0] = (qreal)data[0] / 900.0;
+    result[1] = (qreal)data[1] / 900.0;
+    result[2] = (qreal)data[2] / 900.0;
+    return result;
+}
+
+qreal* BNO055::readAccelerometer(){
+    qint16 *data = readVector3(BNO055_ACCEL_DATA_X_LSB_ADDR);
+    qreal *result = new qreal[3];
+    result[0] = (qreal)data[0] / 100.0;
+    result[1] = (qreal)data[1] / 100.0;
+    result[2] = (qreal)data[2] / 100.0;
+    return result;
+}
+
+qreal* BNO055::readLinearAccelerometer(){
+    qint16 *data = readVector3(BNO055_LINEAR_ACCEL_DATA_X_LSB_ADDR);
+    qreal *result = new qreal[3];
+    result[0] = (qreal)data[0] / 100.0;
+    result[1] = (qreal)data[1] / 100.0;
+    result[2] = (qreal)data[2] / 100.0;
+    return result;
+}
+
+qreal* BNO055::readGravity(){
+    qint16 *data = readVector3(BNO055_GRAVITY_DATA_X_LSB_ADDR);
+    qreal *result = new qreal[3];
+    result[0] = (qreal)data[0] / 100.0;
+    result[1] = (qreal)data[1] / 100.0;
+    result[2] = (qreal)data[2] / 100.0;
+    return result;
+}
+
+qreal* BNO055::readQuaternion(){
+    qint16 *data = readVector4(BNO055_QUATERNION_DATA_X_LSB_ADDR);
+    qreal *result = new qreal[4];
+    qreal scale = (1.0/(1<<14));
+    result[0] = (qreal)data[0] * scale;
+    result[1] = (qreal)data[1] * scale;
+    result[2] = (qreal)data[2] * scale;
+    result[3] = (qreal)data[3] * scale;
+    return result;
+}
+
+qint8 BNO055::readTemperature(){
+    return (qint8) readByte(BNO055_TEMP_ADDR);
+}
+
+

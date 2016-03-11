@@ -1,16 +1,23 @@
 #ifndef BNO055_H
 #define BNO055_H
 
+//To build on Desktop w/o WiringPi library
+#define NOT_A_PI
+
 #include <QObject>
 #include <QtSerialPort/QSerialPort>
 #include <QtSerialPort/QSerialPortInfo>
 #include <QByteArray>
 #include <QDebug>
+#include <QFile>
 
 #include <exception>
 #include <stdexcept>
 #include <string>
+
+#ifndef NOT_A_PI
 #include <wiringPi.h>
+#endif
 
 
 // I2C addresses
@@ -225,6 +232,19 @@ struct Revision{
     quint8  sw;
 };
 
+struct SelfTest {
+    quint8 status;
+    quint8 self_test;
+    quint8 error;
+};
+
+struct CalibrationStatus {
+    bool system;
+    bool gyroscope;
+    bool accelerometer;
+    bool magnetometer;
+};
+
 class BNO055 : public QObject
 {
     Q_OBJECT
@@ -246,8 +266,25 @@ public:
     void init();
     quint16 bytes2quint16(quint8 lsb, quint8 msb);
     Revision getRevision();
+    void setExternalCrystal(bool has_external_crystal);
+    SelfTest selfTest();
+    void printSelfTest(SelfTest test_result);
+    void printSelfTest();
+    CalibrationStatus getCalibrationStatus();
+    QByteArray getCalibration();
+    void setCalibration(QByteArray data);
+    bool writeCalibrationFile(QString file_path);
+    bool readCalibrationFile(QString file_path);
     qint16* readVector3(quint8 address);
+    qint16* readVector4(quint8 address);
     qreal* readEuler();
+    qreal* readMagnetometer();
+    qreal* readGyroscope();
+    qreal* readAccelerometer();
+    qreal* readLinearAccelerometer();
+    qreal* readGravity();
+    qreal* readQuaternion();
+    qint8 readTemperature();
 
 signals:
 
