@@ -1,5 +1,5 @@
 QT += core serialport
-QT -= gui
+#QT -= gui
 
 TARGET = BNO055
 CONFIG += console

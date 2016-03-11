@@ -10,8 +10,8 @@
 #include <QByteArray>
 #include <QDebug>
 #include <QFile>
-#include <QVector3D>
-#include <QQuaternion>
+#include <QtGui/QVector3D>
+#include <QtGui/QQuaternion>
 
 #include <exception>
 #include <stdexcept>
@@ -280,18 +280,16 @@ public:
     void setCalibration(QByteArray data);
     bool writeCalibrationFile(QString file_path);
     bool readCalibrationFile(QString file_path);
-    qint16* readVector3(quint8 address);
-    qint16* readVector4(quint8 address);
-    qreal* readEuler();
-    qreal* readMagnetometer();
-    qreal* readGyroscope();
-    qreal* readAccelerometer();
-    qreal* readLinearAccelerometer();
-    qreal* readGravity();
-    qreal* readQuaternion();
+    QVector3D readVector3(quint8 address, qreal scale);
+    QQuaternion readQuaternion(quint8 address, qreal scale);
+    QVector3D readEuler();
+    QVector3D readMagnetometer();
+    QVector3D readGyroscope();
+    QVector3D readAccelerometer();
+    QVector3D readLinearAccelerometer();
+    QVector3D readGravity();
+    QQuaternion getQuaternion();
     qint8 readTemperature();
-    void printVector3(qreal* data, char* heading1, char* heading2, char* heading3);
-    void printVector4(qreal* data, char* heading1, char* heading2, char* heading3, char* heading4);
     void printReadings(int count);
 
 signals:

@@ -488,121 +488,77 @@ bool BNO055::readCalibrationFile(QString file_path){
 
 
 
-qint16* BNO055::readVector3(quint8 address){
+QVector3D BNO055::readVector3(quint8 address, qreal scale){
     QByteArray data = readBytes(address, 6);
     qint16 *result = new qint16[3];
     for(int i=0; i<3; i++){
         result[i] = ((data[i*2+1] << 8) | data[i*2]) & 0xFFFF;
     }
-    return result;
+    return QVector3D(
+            (qreal)result[0]/scale,
+            (qreal)result[1]/scale,
+            (qreal)result[2]/scale
+            );
 }
-qint16* BNO055::readVector4(quint8 address){
+
+QQuaternion BNO055::readQuaternion(quint8 address, qreal scale){
     QByteArray data = readBytes(address, 8);
-    qint16 *result = new qint16[3];
-    for(int i=0; i<3; i++){
+    qint16 *result = new qint16[4];
+    for(int i=0; i<4; i++){
         result[i] = ((data[i*2+1] << 8) | data[i*2]) & 0xFFFF;
-        //if(result[i] > 32767) result[i] -= 65536;
     }
-    return result;
+    return QQuaternion(
+            (qreal)result[3]*scale,
+            (qreal)result[0]*scale,
+            (qreal)result[1]*scale,
+            (qreal)result[2]*scale
+            );
 }
 
-qreal* BNO055::readEuler(){
-    qint16 *data = readVector3(BNO055_EULER_H_LSB_ADDR);
-    qreal *result = new qreal[3];
-    result[0] = (qreal)data[0] / 16.0;
-    result[1] = (qreal)data[1] / 16.0;
-    result[2] = (qreal)data[2] / 16.0;
-    return result;
+QVector3D BNO055::readEuler(){
+    return readVector3(BNO055_EULER_H_LSB_ADDR, 16.0);
 }
 
-qreal* BNO055::readMagnetometer(){
-    qint16 *data = readVector3(BNO055_MAG_DATA_X_LSB_ADDR);
-    qreal *result = new qreal[3];
-    result[0] = (qreal)data[0] / 16.0;
-    result[1] = (qreal)data[1] / 16.0;
-    result[2] = (qreal)data[2] / 16.0;
-    return result;
+QVector3D BNO055::readMagnetometer(){
+    return readVector3(BNO055_MAG_DATA_X_LSB_ADDR, 16.0);
 }
 
-qreal* BNO055::readGyroscope(){
-    qint16 *data = readVector3(BNO055_GYRO_DATA_X_LSB_ADDR);
-    qreal *result = new qreal[3];
-    result[0] = (qreal)data[0] / 900.0;
-    result[1] = (qreal)data[1] / 900.0;
-    result[2] = (qreal)data[2] / 900.0;
-    return result;
+QVector3D BNO055::readGyroscope(){
+    return readVector3(BNO055_GYRO_DATA_X_LSB_ADDR, 900.0);
 }
 
-qreal* BNO055::readAccelerometer(){
-    qint16 *data = readVector3(BNO055_ACCEL_DATA_X_LSB_ADDR);
-    qreal *result = new qreal[3];
-    result[0] = (qreal)data[0] / 100.0;
-    result[1] = (qreal)data[1] / 100.0;
-    result[2] = (qreal)data[2] / 100.0;
-    return result;
+QVector3D BNO055::readAccelerometer(){
+    return readVector3(BNO055_ACCEL_DATA_X_LSB_ADDR, 100.0);
 }
 
-qreal* BNO055::readLinearAccelerometer(){
-    qint16 *data = readVector3(BNO055_LINEAR_ACCEL_DATA_X_LSB_ADDR);
-    qreal *result = new qreal[3];
-    result[0] = (qreal)data[0] / 100.0;
-    result[1] = (qreal)data[1] / 100.0;
-    result[2] = (qreal)data[2] / 100.0;
-    return result;
+QVector3D BNO055::readLinearAccelerometer(){
+    return readVector3(BNO055_LINEAR_ACCEL_DATA_X_LSB_ADDR, 100.0);
 }
 
-qreal* BNO055::readGravity(){
-    qint16 *data = readVector3(BNO055_GRAVITY_DATA_X_LSB_ADDR);
-    qreal *result = new qreal[3];
-    result[0] = (qreal)data[0] / 100.0;
-    result[1] = (qreal)data[1] / 100.0;
-    result[2] = (qreal)data[2] / 100.0;
-    return result;
+QVector3D BNO055::readGravity(){
+    return readVector3(BNO055_GRAVITY_DATA_X_LSB_ADDR, 100.0);
 }
 
-qreal* BNO055::readQuaternion(){
-    qint16 *data = readVector4(BNO055_QUATERNION_DATA_X_LSB_ADDR);
-    qreal *result = new qreal[4];
+QQuaternion BNO055::getQuaternion(){
     qreal scale = (1.0/(1<<14));
-    result[0] = (qreal)data[0] * scale;
-    result[1] = (qreal)data[1] * scale;
-    result[2] = (qreal)data[2] * scale;
-    result[3] = (qreal)data[3] * scale;
-    return result;
+    return readQuaternion(BNO055_QUATERNION_DATA_X_LSB_ADDR, scale);
 }
 
 qint8 BNO055::readTemperature(){
     return (qint8) readByte(BNO055_TEMP_ADDR);
 }
 
-
-void BNO055::printVector3(qreal* data, char* heading1, char* heading2, char* heading3){
-    qDebug() << heading1 << " " << (qreal)data[0] 
-        <<" " << heading2<< " " << (qreal)data[1] 
-        <<" " << heading3<< " " << (qreal)data[2];
-}
-void BNO055::printVector4(qreal* data, char* heading1, char* heading2, char* heading3, char* heading4){
-    qDebug() << heading1 << " " << (qreal)data[0] 
-        <<" " << heading2<< " " << (qreal)data[1] 
-        <<" " << heading3<< " " << (qreal)data[2]
-        <<" " << heading4<< " " << (qreal)data[3];
-}
-
 void BNO055::printReadings(int count){
     for(int i=0; i<count; i++){
-        delay(100);
-        printVector3(readEuler(), "euler: x","y","z");
-        delay(100);
-        printVector3(readMagnetometer(), "mag: x","y","z");
-        delay(100);
-        printVector3(readGyroscope(), "gyro: x","y","z");
-        delay(100);
-        printVector3(readAccelerometer(), "accel: x","y","z");
-        delay(100);
-        printVector3(readLinearAccelerometer(), "laccel: x","y","z");
-        delay(100);
-        printVector3(readGravity(), "grav: x","y","z");
-        delay(100);
-        printVector4(readQuaternion(), "quat: x","y","z","w");
+        qDebug() << "****************************************************";
+        qDebug() << "Euler" << readEuler();
+        qDebug() << "Magnetometer" << readMagnetometer();
+        qDebug() << "Gyroscope" << readGyroscope();
+        qDebug() << "Accelerometer" << readAccelerometer();
+        qDebug() << "Linear Accel" << readLinearAccelerometer();
+        qDebug() << "Gravity" << readGravity();
+        qDebug() << "Quaternion" << getQuaternion();
+        qDebug() << "Temperature" << readTemperature();
+        qDebug() <<" ";
     }
 }
