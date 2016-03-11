@@ -61,7 +61,7 @@ QByteArray BNO055::serialSend(QByteArray command, bool ack){
     QByteArray acknowledgement, response, tmp;
     int cnt = 0;
     bool is_ack = false;
-    qDebug() << "sending:" << command.toHex();
+    //qDebug() << "sending:" << command.toHex();
     serial_port.clear();
     do{
         serial_port.write(command, command.count());
@@ -85,7 +85,7 @@ QByteArray BNO055::serialSend(QByteArray command, bool ack){
             response.append(tmp);
         }while( response.count() < length_to_read && serial_port.waitForReadyRead(1000));
     }while( !is_ack &&  cnt < 5 );
-    qDebug()<< "response:" << response.toHex();
+    //qDebug()<< "response:" << response.toHex();
     return response;
 }
 
@@ -242,7 +242,7 @@ bool BNO055::isReadAck(QByteArray response){
 bool BNO055::setMode(char mode){
     bool r = writeCommand(BNO055_OPR_MODE_ADDR, mode, true);
 #ifndef NOT_A_PI
-    delay (300) ;
+    delay (50) ;
 #endif
     return r;
 }
@@ -283,19 +283,6 @@ void BNO055::init(){
     writeCommand(BNO055_SYS_TRIGGER_ADDR, 0x0);
     setOperationMode();
 
-    //probably don't want this here forever
-    Revision rev = getRevision();
-    qDebug() << "Revision Information";
-    qDebug() << "Accelerometer" << rev.accel;
-    qDebug() << "Magnetometer" << rev.mag;
-    qDebug() << "Gyroscope" << rev.gyro;
-    qDebug() << "bl" << rev.bl;
-    qDebug() << "sw" << rev.sw;
-    //probably don't want this here forever
-    for(int i = 0; i< 10; i++){
-        qreal* euler = readEuler();
-        qDebug() << (qreal)euler[0] << " " << (qreal)euler[1] << " " << (qreal)euler[2];
-    } 
 }
 
 quint16 BNO055::bytes2quint16(quint8 lsb, quint8 msb){
@@ -304,15 +291,22 @@ quint16 BNO055::bytes2quint16(quint8 lsb, quint8 msb){
 
 Revision BNO055::getRevision(){
     Revision rev;
-#ifndef NOT_A_PI
-    delay (3000) ;
-#endif
     rev.accel = readByte(BNO055_ACCEL_REV_ID_ADDR);
     rev.mag = readByte(BNO055_MAG_REV_ID_ADDR);
     rev.gyro = readByte(BNO055_GYRO_REV_ID_ADDR);
     rev.bl = readByte(BNO055_BL_REV_ID_ADDR);
     rev.sw = bytes2quint16( readByte(BNO055_SW_REV_ID_LSB_ADDR), readByte(BNO055_SW_REV_ID_MSB_ADDR) );
     return rev;
+}
+
+void BNO055::printRevision(){
+    Revision rev = getRevision();
+    qDebug() << "Revision Information";
+    qDebug() << "Accelerometer" << rev.accel;
+    qDebug() << "Magnetometer" << rev.mag;
+    qDebug() << "Gyroscope" << rev.gyro;
+    qDebug() << "bl" << rev.bl;
+    qDebug() << "sw" << rev.sw;
 }
 
 void BNO055::setExternalCrystal(bool has_external_crystal){
@@ -433,6 +427,18 @@ CalibrationStatus BNO055::getCalibrationStatus(){
     return cs;
 }
 
+void BNO055::printCalibrationStatus(CalibrationStatus cs){
+    qDebug() << "Calibration Satus: system="<<cs.system
+        <<" gyroscope="<<cs.gyroscope
+        <<" accelerometer="<<cs.accelerometer
+        <<" magnetometer="<<cs.magnetometer;
+}
+
+void BNO055::printCalibrationStatus(){
+    CalibrationStatus cs = getCalibrationStatus();
+    printCalibrationStatus(cs);
+}
+
 QByteArray BNO055::getCalibration(){
     QByteArray config;
     setConfigMode();
@@ -454,7 +460,9 @@ bool BNO055::writeCalibrationFile(QString file_path){
     //wait until it is calibrated
     qDebug() << "Waiting for calibration";
     do{
+        printReadings(1);
         cs = getCalibrationStatus();
+        printCalibrationStatus(cs);
 #ifndef NOT_A_PI
         delay(1000);
 #endif
@@ -568,3 +576,33 @@ qint8 BNO055::readTemperature(){
 }
 
 
+void BNO055::printVector3(qreal* data, char* heading1, char* heading2, char* heading3){
+    qDebug() << heading1 << " " << (qreal)data[0] 
+        <<" " << heading2<< " " << (qreal)data[1] 
+        <<" " << heading3<< " " << (qreal)data[2];
+}
+void BNO055::printVector4(qreal* data, char* heading1, char* heading2, char* heading3, char* heading4){
+    qDebug() << heading1 << " " << (qreal)data[0] 
+        <<" " << heading2<< " " << (qreal)data[1] 
+        <<" " << heading3<< " " << (qreal)data[2]
+        <<" " << heading4<< " " << (qreal)data[3];
+}
+
+void BNO055::printReadings(int count){
+    for(int i=0; i<count; i++){
+        delay(100);
+        printVector3(readEuler(), "euler: x","y","z");
+        delay(100);
+        printVector3(readMagnetometer(), "mag: x","y","z");
+        delay(100);
+        printVector3(readGyroscope(), "gyro: x","y","z");
+        delay(100);
+        printVector3(readAccelerometer(), "accel: x","y","z");
+        delay(100);
+        printVector3(readLinearAccelerometer(), "laccel: x","y","z");
+        delay(100);
+        printVector3(readGravity(), "grav: x","y","z");
+        delay(100);
+        printVector4(readQuaternion(), "quat: x","y","z","w");
+    }
+}

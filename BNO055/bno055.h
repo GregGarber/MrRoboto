@@ -2,7 +2,7 @@
 #define BNO055_H
 
 //To build on Desktop w/o WiringPi library
-#define NOT_A_PI
+//#define NOT_A_PI
 
 #include <QObject>
 #include <QtSerialPort/QSerialPort>
@@ -10,6 +10,8 @@
 #include <QByteArray>
 #include <QDebug>
 #include <QFile>
+#include <QVector3D>
+#include <QQuaternion>
 
 #include <exception>
 #include <stdexcept>
@@ -266,11 +268,14 @@ public:
     void init();
     quint16 bytes2quint16(quint8 lsb, quint8 msb);
     Revision getRevision();
+    void printRevision();
     void setExternalCrystal(bool has_external_crystal);
     SelfTest selfTest();
     void printSelfTest(SelfTest test_result);
     void printSelfTest();
     CalibrationStatus getCalibrationStatus();
+    void printCalibrationStatus(CalibrationStatus cs);
+    void printCalibrationStatus();
     QByteArray getCalibration();
     void setCalibration(QByteArray data);
     bool writeCalibrationFile(QString file_path);
@@ -285,6 +290,9 @@ public:
     qreal* readGravity();
     qreal* readQuaternion();
     qint8 readTemperature();
+    void printVector3(qreal* data, char* heading1, char* heading2, char* heading3);
+    void printVector4(qreal* data, char* heading1, char* heading2, char* heading3, char* heading4);
+    void printReadings(int count);
 
 signals:
 
