@@ -1,14 +1,17 @@
 QT += core network
 QT -= gui
 
-TARGET = RobotClient
+LIBS +=   -lqmqtt
+CONFIG += c++11
+
+TARGET = bnoClient
 CONFIG += console
 CONFIG -= app_bundle
 
 TEMPLATE = app
 
 SOURCES += main.cpp \
-    client.cpp
+    testit.cpp
 
 HEADERS += \
-    client.h
+    testit.h

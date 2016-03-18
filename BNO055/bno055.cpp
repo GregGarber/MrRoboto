@@ -2,12 +2,16 @@
 
 
 BNO055::BNO055(QObject *parent) : QObject(parent)
+//BNO055::BNO055(QObject *parent) :  BNO055SimpleSource(parent)
 {
 #ifndef NOT_A_PI
     wiringPiSetup () ;
     pinMode (18, OUTPUT) ;
     digitalWrite (0, HIGH) ; delay (650) ;
 #endif
+    timer.setSingleShot(false);
+    timer.setInterval(1000);
+    connect(&timer, SIGNAL(timeout()), this, SLOT(timeout()));
 
 
     // For now make stupid assumption that 1st available serial port is correct one
@@ -46,15 +50,22 @@ BNO055::BNO055(QObject *parent) : QObject(parent)
     }
     connect(&serial_port, SIGNAL(error(QSerialPort::SerialPortError)), this,
             SLOT(handleError(QSerialPort::SerialPortError)));
-}
 
+    client = new QMQTT::Client(EXAMPLE_HOST, EXAMPLE_PORT, this);
+    client->setCleanSession(true);
+    client->setAutoReconnect(true);
+    connect(client, SIGNAL(error(QMQTT::ClientError)), this, SLOT(mqttError(QMQTT::ClientError)));
+    connect(client, SIGNAL(connected()), this, SLOT(onConnect()));
+    connect(client, SIGNAL(received(QMQTT::Message)), this, SLOT(onReceived(QMQTT::Message)));
+    connect(client, SIGNAL(disconnected()), this, SLOT(onDisconnect()));
+    client->setClientId("DoogyHowser");
+    client->connectToHost();
+}
 void BNO055::handleError(QSerialPort::SerialPortError error)
 {
     if (error == QSerialPort::ResourceError) {
-        qDebug() << "Critical ResourceError:" << serial_port.errorString();
-    }/*else{
-        qDebug() << "Error:"<< error << " " << serial_port.errorString();
-    }*/
+       qDebug() << "Critical ResourceError:" << serial_port.errorString();
+    }
 }
 
 QByteArray BNO055::serialSend(QByteArray command, bool ack){
@@ -516,7 +527,15 @@ QQuaternion BNO055::readQuaternion(quint8 address, qreal scale){
 }
 
 QVector3D BNO055::readEuler(){
-    return readVector3(BNO055_EULER_H_LSB_ADDR, 16.0);
+    QVector3D ret = readVector3(BNO055_EULER_H_LSB_ADDR, 16.0);
+     emit gotEuler( ret );
+    if(client->isConnectedToHost()){
+        QMQTT::Message message(_number, EXAMPLE_TOPIC,
+                               QString("{ type: euler, x: %1, y: %2, z:%3 }").arg(ret.x()).arg(ret.y()).arg(ret.z()).toUtf8());
+        _number++;
+        client->publish( message);
+    }
+    return ret;
 }
 
 QVector3D BNO055::readMagnetometer(){
@@ -562,3 +581,44 @@ void BNO055::printReadings(int count){
         qDebug() <<" ";
     }
 }
+void BNO055::timeout(){
+        emit gotEuler( readEuler() );
+        emit gotMagnetometer( readMagnetometer() );
+        emit gotGyroscope( readGyroscope() );
+        emit gotAccelerometer( readAccelerometer() );
+        emit gotLinearAccelerometer( readLinearAccelerometer() );
+        emit gotGravity( readGravity() );
+        emit gotQuaternion( getQuaternion() );
+        emit gotTemperature( readTemperature() );
+}
+
+void BNO055::mqttError(const QMQTT::ClientError error){
+    qDebug() << "Errro:"<< error;
+}
+
+void BNO055::onConnect(){
+    qDebug() << "Connected";
+    client->subscribe(EXAMPLE_TOPIC,0);
+    if(client->isConnectedToHost()){
+        QMQTT::Message message(_number, EXAMPLE_TOPIC, QString("Connection %1 to BNO055").arg(connectionCnt).toUtf8());
+        _number++;
+        client->publish( message);
+    }else{
+        qDebug() << "no connection " << client->host() << client->port();
+    }
+
+}
+void BNO055::onReceived(QMQTT::Message msg){
+    qDebug() << "received:"<<msg.topic()<< " > " <<msg.payload();
+    if(msg.payload() == "start"){
+        if(connectionCnt == 0 ) timer.start();
+        connectionCnt++;
+    }
+}
+
+void BNO055::onDisconnect(){
+    qDebug() << "sensing a disconnect";
+        connectionCnt++;
+        if(connectionCnt == 0 ) timer.stop();
+}
+

@@ -3,4 +3,5 @@ TEMPLATE = subdirs
 SUBDIRS += \
     Mercury \
     RobotClient \
-    BNO055
+    BNO055 \
+    bnoClient

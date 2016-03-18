@@ -14,4 +14,3 @@ SOURCES += main.cpp \
 HEADERS += \
     network.h \
     server.h
-

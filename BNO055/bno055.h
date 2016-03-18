@@ -7,11 +7,13 @@
 #include <QObject>
 #include <QtSerialPort/QSerialPort>
 #include <QtSerialPort/QSerialPortInfo>
+#include <QDataStream>
 #include <QByteArray>
 #include <QDebug>
 #include <QFile>
 #include <QtGui/QVector3D>
 #include <QtGui/QQuaternion>
+#include <QTimer>
 
 #include <exception>
 #include <stdexcept>
@@ -21,6 +23,13 @@
 #include <wiringPi.h>
 #endif
 
+#include<qmqtt/qmqtt.h>
+
+//const QHostAddress EXAMPLE_HOST = QHostAddress::LocalHost;
+//const QHostAddress EXAMPLE_HOST = QHostAddress("sam");
+const QHostAddress EXAMPLE_HOST = QHostAddress("10.42.0.1");
+const quint16 EXAMPLE_PORT = 1883;
+const QString EXAMPLE_TOPIC = "testing";
 
 // I2C addresses
 #define BNO055_ADDRESS_A                      0x28
@@ -248,6 +257,7 @@ struct CalibrationStatus {
 };
 
 class BNO055 : public QObject
+//class BNO055 :  public BNO055SimpleSource
 {
     Q_OBJECT
 public:
@@ -281,6 +291,7 @@ public:
     bool writeCalibrationFile(QString file_path);
     bool readCalibrationFile(QString file_path);
     QVector3D readVector3(quint8 address, qreal scale);
+    void printReadings(int count);
     QQuaternion readQuaternion(quint8 address, qreal scale);
     QVector3D readEuler();
     QVector3D readMagnetometer();
@@ -290,15 +301,32 @@ public:
     QVector3D readGravity();
     QQuaternion getQuaternion();
     qint8 readTemperature();
-    void printReadings(int count);
 
 signals:
+    void gotEuler(QVector3D data);
+    void gotMagnetometer(QVector3D data );
+    void gotGyroscope(QVector3D data );
+    void gotAccelerometer(QVector3D data );
+    void gotLinearAccelerometer(QVector3D data );
+    void gotGravity(QVector3D data );
+    void gotQuaternion(QQuaternion data );
+    void gotTemperature(qint8 data );
+    void gotError(QSerialPort::SerialPortError error);
 
 public slots:
     void handleError(QSerialPort::SerialPortError error);
+    void timeout();
+    void mqttError(const QMQTT::ClientError error);
+    void onConnect();
+    void onDisconnect();
+    void onReceived(QMQTT::Message);
 
 private:
     QSerialPort serial_port;
+    QTimer timer;
+    QMQTT::Client *client;
+    int _number = 1;
+    int connectionCnt=0;
 };
 
 #endif // BNO055_H
