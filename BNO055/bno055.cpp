@@ -1,16 +1,27 @@
 #include "bno055.h"
+#include <sys/time.h>
 
+//is Servo Ctrl #18 GPIO 24 or 18?
+//#define PIN_RESET 24
+//Physical pin 18, which I assume is number on circuit board, is GPIO 24
+#define PIN_RESET 18
+//Physical pin 22 is GPIO 25
+#define PIN_INTER 22
+void doInterrupt(){ //TODO
+    qDebug() << "Caugth Interrupt";
+}
 
 BNO055::BNO055(QObject *parent) : QObject(parent)
-//BNO055::BNO055(QObject *parent) :  BNO055SimpleSource(parent)
 {
 #ifndef NOT_A_PI
-    wiringPiSetup () ;
-    pinMode (18, OUTPUT) ;
-    digitalWrite (0, HIGH) ; delay (650) ;
+    wiringPiSetupPhys() ;//
+    pinMode (PIN_RESET, OUTPUT) ;
+    digitalWrite (PIN_RESET, HIGH) ;
+    delay (650) ;
+    wiringPiISR(PIN_INTER, INT_EDGE_BOTH,doInterrupt);
 #endif
     timer.setSingleShot(false);
-    timer.setInterval(1000);
+    timer.setInterval(10);
     connect(&timer, SIGNAL(timeout()), this, SLOT(timeout()));
 
 
@@ -28,15 +39,17 @@ BNO055::BNO055(QObject *parent) : QObject(parent)
         if(!info.isBusy()){
             serial_port.setPortName(info.systemLocation());
             //serial_port.setPortName("/dev/ttyAMA0");
-            serial_port.setBaudRate(QSerialPort::Baud115200);
+            serial_port.setBaudRate(QSerialPort::Baud115200);//57600 doesn't work,38400 no joy
             serial_port.setDataBits(QSerialPort::Data8);
             serial_port.setParity(QSerialPort::NoParity);
+            serial_port.setStopBits(QSerialPort::OneStop);
             serial_port.setFlowControl(QSerialPort::NoFlowControl);
             serial_port.open(QIODevice::ReadWrite);
-            serial_port.clear();
+            serial_port.setReadBufferSize(1024);
+            //serial_port.clear();
             //blocking
-            serial_port.waitForReadyRead(1000);
-            serial_port.waitForBytesWritten(1000);
+            //serial_port.waitForReadyRead(1000);
+            //serial_port.waitForBytesWritten(1000);
             if(serial_port.isOpen()){
                 qDebug() << "Opened Serial Port: " << info.systemLocation();
                 break;
@@ -70,33 +83,41 @@ void BNO055::handleError(QSerialPort::SerialPortError error)
 
 QByteArray BNO055::serialSend(QByteArray command, bool ack){
     QByteArray acknowledgement, response, tmp;
+    const int retry = 1;
     int cnt = 0;
     bool is_ack = false;
+    bno_has_error = false;
     //qDebug() << "sending:" << command.toHex();
-    serial_port.clear();
+    //serial_port.clear();
     do{
         serial_port.write(command, command.count());
+        //serial_port.flush();
         if(!ack) return response;
         cnt++;
         do{
             tmp = serial_port.read(2 - acknowledgement.count() );//attempt limit read to 2 bytes
             acknowledgement.append(tmp);
-        }while( acknowledgement.count() < 2 && serial_port.waitForReadyRead(1000));
+        }while( acknowledgement.count() < 2 && serial_port.waitForReadyRead(200));
 
         if(acknowledgement.count() != 2) {
             throw std::runtime_error(std::string("Didn't Get Acknowledgement!"));
         }
-    //    qDebug()<< "ack:" << acknowledgement.toHex();
         is_ack =  (quint8) command[1] == (quint8) 0x00 ? isWriteAck(acknowledgement) : isReadAck(acknowledgement); 
+        bno_has_error = !is_ack;
         if(!is_ack) continue;
         int length_to_read = acknowledgement[1];
         tmp.clear();
         do{
             tmp = serial_port.read(length_to_read - response.count() );//attempt limit read to length_to_read bytes
             response.append(tmp);
-        }while( response.count() < length_to_read && serial_port.waitForReadyRead(1000));
-    }while( !is_ack &&  cnt < 5 );
+        }while( response.count() < length_to_read && serial_port.waitForReadyRead(200));
+    }while( !is_ack &&  cnt < retry );
+        bno_has_error = !is_ack;
     //qDebug()<< "response:" << response.toHex();
+        if(bno_has_error){
+            delay(30);
+            serial_port.clear();
+        }
     return response;
 }
 
@@ -108,8 +129,18 @@ bool BNO055::writeCommand(quint8 address, QByteArray value, bool ack)
     send_data.append( address );
     send_data.append( value.count() );
     send_data.append( value );
+    do{
     serialSend( send_data, ack );
-    return true;
+    /*
+        if(bno_has_error){
+            qDebug() << "bno has error:"<< bno_has_error;
+            delay(500);
+        }
+        */
+    }while(bno_has_error);
+    return bno_has_error;
+   // return true;
+//    return serialSend( send_data, ack );
 }
 
 bool BNO055::writeCommand(quint8 address, quint8 value, bool ack)
@@ -170,13 +201,22 @@ bool BNO055::isWriteAck(QByteArray response){
 
 QByteArray BNO055::readCommand(quint8 address, QByteArray value, bool ack)
 {
-    QByteArray send_data;
+    QByteArray send_data, ret;
     send_data.append(0xAA);
     send_data.append( (char)0x01);
     send_data.append( address );
     send_data.append( value.count() );
     send_data.append( value );
-    return serialSend( send_data, ack );
+    do{
+    ret =  serialSend( send_data, ack );
+    /*
+        if(bno_has_error){
+            qDebug() << "bno has error:"<< bno_has_error;
+            delay(500);
+        }
+        */
+    }while(bno_has_error);
+    return ret;
 }
 
 QByteArray BNO055::readCommand(quint8 address, quint8 value, bool ack)
@@ -188,12 +228,21 @@ QByteArray BNO055::readCommand(quint8 address, quint8 value, bool ack)
 
 QByteArray BNO055::readBytes(quint8 address, quint8 length )
 {
-    QByteArray send_data;
+    QByteArray send_data, ret;
     send_data.append(0xAA);
     send_data.append( (char)0x01);
     send_data.append( address );
     send_data.append( length );
-    return serialSend( send_data, true );
+    do{
+        ret=serialSend( send_data, true );
+        /*
+        if(bno_has_error){
+            qDebug() <<"readBytes bno_has_error "<<bno_has_error;
+            delay(500);
+        }
+        */
+    }while(bno_has_error);
+    return ret;
 }
 
 quint8 BNO055::readByte(quint8 address )
@@ -252,9 +301,6 @@ bool BNO055::isReadAck(QByteArray response){
 
 bool BNO055::setMode(char mode){
     bool r = writeCommand(BNO055_OPR_MODE_ADDR, mode, true);
-#ifndef NOT_A_PI
-    delay (50) ;
-#endif
     return r;
 }
 
@@ -268,6 +314,7 @@ bool BNO055::setOperationMode(){
 
 
 void BNO055::init(){
+    serial_port.clear();
     QByteArray response;
     qDebug() << "write PAGE ID";
     writeCommand(BNO055_PAGE_ID_ADDR, 0, false);
@@ -284,16 +331,18 @@ void BNO055::init(){
 
     //reset
 #ifndef NOT_A_PI
-    digitalWrite (0, LOW) ; delay (10) ;
-    digitalWrite (0, HIGH) ; 
-    delay (650) ;
+    digitalWrite (PIN_RESET, LOW) ; delay (10) ;
+    digitalWrite (PIN_RESET, HIGH) ;  delay (650) ;
+    serial_port.clear();
 #endif
     qDebug() << "write Power mode";
     writeCommand(BNO055_PWR_MODE_ADDR, POWER_MODE_NORMAL);
     qDebug() << "write use internal oscillator";
     writeCommand(BNO055_SYS_TRIGGER_ADDR, 0x0);
+    qDebug() << "setting operation mode";
     setOperationMode();
 
+    serial_port.clear();
 }
 
 quint16 BNO055::bytes2quint16(quint8 lsb, quint8 msb){
@@ -339,9 +388,6 @@ SelfTest BNO055::selfTest(){
     setConfigMode();
     sys_trigger = readByte(BNO055_SYS_TRIGGER_ADDR);
     writeCommand(BNO055_SYS_TRIGGER_ADDR, sys_trigger | 0x1);
-#ifndef NOT_A_PI
-    delay(1000);
-#endif
     test_result.self_test = readByte(BNO055_SELFTEST_RESULT_ADDR);
     setOperationMode();
     test_result.status = readByte(BNO055_SYS_STAT_ADDR);
@@ -474,9 +520,6 @@ bool BNO055::writeCalibrationFile(QString file_path){
         printReadings(1);
         cs = getCalibrationStatus();
         printCalibrationStatus(cs);
-#ifndef NOT_A_PI
-        delay(1000);
-#endif
     }while( !cs.system || !cs.accelerometer || !cs.gyroscope || !cs.magnetometer);
     qDebug() << "Calibration Ready";
     //get the calibration
@@ -505,11 +548,21 @@ QVector3D BNO055::readVector3(quint8 address, qreal scale){
     for(int i=0; i<3; i++){
         result[i] = ((data[i*2+1] << 8) | data[i*2]) & 0xFFFF;
     }
-    return QVector3D(
+    QVector3D ret = QVector3D(
             (qreal)result[0]/scale,
             (qreal)result[1]/scale,
             (qreal)result[2]/scale
             );
+    if(client->isConnectedToHost()){
+        timespec ts;
+        clock_gettime(CLOCK_REALTIME, &ts);
+        QMQTT::Message message(_number, EXAMPLE_TOPIC,
+                               QString("{ type: euler, x: %1, y: %2, z:%3 , seconds:%5, nanoseconds:%6}")
+                               .arg(ret.x()).arg(ret.y()).arg(ret.z()).arg(ts.tv_sec).arg(ts.tv_nsec) .toUtf8());
+        _number++;
+        client->publish( message);
+    }
+    return ret;
 }
 
 QQuaternion BNO055::readQuaternion(quint8 address, qreal scale){
@@ -518,23 +571,26 @@ QQuaternion BNO055::readQuaternion(quint8 address, qreal scale){
     for(int i=0; i<4; i++){
         result[i] = ((data[i*2+1] << 8) | data[i*2]) & 0xFFFF;
     }
-    return QQuaternion(
+    QQuaternion ret = QQuaternion(
             (qreal)result[3]*scale,
             (qreal)result[0]*scale,
             (qreal)result[1]*scale,
             (qreal)result[2]*scale
             );
+    if(client->isConnectedToHost()){
+        timespec ts;
+        clock_gettime(CLOCK_REALTIME, &ts);
+        QMQTT::Message message(_number, EXAMPLE_TOPIC,
+                               QString("{ type: quat, x: %1, y: %2, z:%3 ,w%4, seconds:%5, nanoseconds:%6}")
+                               .arg(ret.x()).arg(ret.y()).arg(ret.z()).arg(ret.length()).arg(ts.tv_sec).arg(ts.tv_nsec) .toUtf8());
+        _number++;
+        client->publish( message);
+    }
+    return ret;
 }
 
 QVector3D BNO055::readEuler(){
     QVector3D ret = readVector3(BNO055_EULER_H_LSB_ADDR, 16.0);
-     emit gotEuler( ret );
-    if(client->isConnectedToHost()){
-        QMQTT::Message message(_number, EXAMPLE_TOPIC,
-                               QString("{ type: euler, x: %1, y: %2, z:%3 }").arg(ret.x()).arg(ret.y()).arg(ret.z()).toUtf8());
-        _number++;
-        client->publish( message);
-    }
     return ret;
 }
 
@@ -582,14 +638,19 @@ void BNO055::printReadings(int count){
     }
 }
 void BNO055::timeout(){
+        timer.stop();
         emit gotEuler( readEuler() );
+        delay(20);
+    /*
         emit gotMagnetometer( readMagnetometer() );
         emit gotGyroscope( readGyroscope() );
         emit gotAccelerometer( readAccelerometer() );
         emit gotLinearAccelerometer( readLinearAccelerometer() );
         emit gotGravity( readGravity() );
+        */
         emit gotQuaternion( getQuaternion() );
-        emit gotTemperature( readTemperature() );
+        //emit gotTemperature( readTemperature() );
+        timer.start();
 }
 
 void BNO055::mqttError(const QMQTT::ClientError error){

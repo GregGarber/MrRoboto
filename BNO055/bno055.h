@@ -327,6 +327,7 @@ private:
     QMQTT::Client *client;
     int _number = 1;
     int connectionCnt=0;
+    bool bno_has_error = false;
 };
 
 #endif // BNO055_H
